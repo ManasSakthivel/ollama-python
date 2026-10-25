@@ -1372,6 +1372,9 @@ class AsyncClient(BaseClient):
 
 
 def _copy_images(images: Optional[Sequence[Union[Image, Any]]]) -> Iterator[Image]:
+  if isinstance(images, (str, bytes, Path, Image)):  # a single image is not a sequence of images
+    images = [images]
+
   for image in images or []:
     yield image if isinstance(image, Image) else Image(value=image)
 

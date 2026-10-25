@@ -469,6 +469,49 @@ def test_client_generate_images(httpserver: HTTPServer):
     assert response['response'] == 'Because it is.'
 
 
+def _images_request(endpoint: str, images: list) -> dict:
+  if endpoint == 'chat':
+    return {'model': 'dummy', 'messages': [{'role': 'user', 'content': 'Why is the sky blue?', 'images': images}], 'tools': [], 'stream': False}
+  return {'model': 'dummy', 'prompt': 'Why is the sky blue?', 'stream': False, 'images': images}
+
+
+def _send_images(client: Client, endpoint: str, images):
+  if endpoint == 'chat':
+    return client.chat('dummy', messages=[{'role': 'user', 'content': 'Why is the sky blue?', 'images': images}])
+  return client.generate('dummy', 'Why is the sky blue?', images=images)
+
+
+@pytest.mark.parametrize('endpoint', ('chat', 'generate'))
+@pytest.mark.parametrize(
+  ('images', 'expected'),
+  [
+    (PNG_BASE64, [PNG_BASE64]),
+    (PNG_BYTES, [PNG_BASE64]),
+    (Image(value=PNG_BASE64), [PNG_BASE64]),
+    ([PNG_BASE64], [PNG_BASE64]),
+    ((PNG_BASE64, PNG_BYTES), [PNG_BASE64, PNG_BASE64]),
+    ([PNG_BYTES, Image(value=PNG_BASE64)], [PNG_BASE64, PNG_BASE64]),
+    ([Image(value=PNG_BASE64)], [PNG_BASE64]),
+  ],
+)
+def test_client_images_single_or_sequence(httpserver: HTTPServer, endpoint: str, images, expected: list):
+  httpserver.expect_ordered_request(f'/api/{endpoint}', method='POST', json=_images_request(endpoint, expected)).respond_with_json({'model': 'dummy', 'message': {'role': 'assistant', 'content': 'ok'}, 'response': 'ok'})
+
+  client = Client(httpserver.url_for('/'))
+  _send_images(client, endpoint, images)
+
+
+@pytest.mark.parametrize('endpoint', ('chat', 'generate'))
+@pytest.mark.parametrize('path_type', (str, Path))
+def test_client_single_image_path(httpserver: HTTPServer, tmp_path: Path, endpoint: str, path_type):
+  image_path = tmp_path / 'transparent.png'
+  image_path.write_bytes(PNG_BYTES)
+  httpserver.expect_ordered_request(f'/api/{endpoint}', method='POST', json=_images_request(endpoint, [PNG_BASE64])).respond_with_json({'model': 'dummy', 'message': {'role': 'assistant', 'content': 'ok'}, 'response': 'ok'})
+
+  client = Client(httpserver.url_for('/'))
+  _send_images(client, endpoint, path_type(image_path))
+
+
 def test_client_generate_format_json(httpserver: HTTPServer):
   httpserver.expect_ordered_request(
     '/api/generate',
